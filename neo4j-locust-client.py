@@ -1,16 +1,17 @@
 from locust import SequentialTaskSet, task, constant, User
-import neo4j_client
+
+from neo4j_client import Neo4jClient
 
 
-class Neo4jClient(SequentialTaskSet):
+class Neo4jTest(SequentialTaskSet):
 
     def __init__(self, parent):
         super().__init__(parent)
         self.driver = ""
 
     def on_start(self):
-        self.driver = neo4j_client.Neo4jLocust("localhost:7687", "naveenkumar", "neo4j")
-        print(self.driver.connect())
+        self.driver = Neo4jClient("localhost:7687", "naveenkumar", "neo4j")
+        self.driver.connect()
 
     @task
     def send_query(self):
@@ -21,10 +22,19 @@ class Neo4jClient(SequentialTaskSet):
         res = self.driver.send(cypher_query, database)
         print(res)
 
+    @task
+    def write_query(self):
+        cypher_query = '''
+        CREATE (u:User { name: "NaveenKumar", userId: "702" })
+        '''
+        database = "neo4j"
+        res = self.driver.write(cypher_query, database)
+        print(res)
+
     def on_stop(self):
         self.driver.disconnect()
 
 
 class Neo4jUser(User):
-    tasks = [Neo4jClient]
+    tasks = [Neo4jTest]
     wait_time = constant(1)
