@@ -129,4 +129,5 @@ dmypy.json
 .pyre/
 
 # Custom file
+.temp.py
 temp.py
