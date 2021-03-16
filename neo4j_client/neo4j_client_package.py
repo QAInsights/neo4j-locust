@@ -1,19 +1,22 @@
 from neo4j import GraphDatabase, basic_auth
 from neo4j.exceptions import *
 from neo4j._exceptions import *
-from locust import events
+from locust import events, User, task
 
 import logging
 import inspect
 import time
 
+"""Return a duration
+
+Decorator to measure the timings for the tasks.
+"""
+
 
 def stopwatch(func):
     def wrapper(*args, **kwargs):
-        # get task's function name
         previous_frame = inspect.currentframe().f_back
         _, _, task_name, _, _ = inspect.getframeinfo(previous_frame)
-
         start = time.time()
         result = None
         try:
@@ -31,40 +34,52 @@ def stopwatch(func):
                                         response_time=total,
                                         response_length=0)
         return result
+
     return wrapper
 
 
-class Neo4jClient:
+"""Class for the Neo4j Client """
 
-    def __init__(self, host, username, password):
+
+class Neo4jClient(User):
+    abstract = True
+
+    def __init__(self, host):
         self.host = host
-        self.username = username
-        self.password = password
+        # self.username = username
+        # self.password = password
         self.driver = None
 
-    def connect(self):
+    """Connects to neo4j database"""
+
+    def connect(self, username, password):
         bolt_url = "bolt://" + self.host
         try:
             self.driver = GraphDatabase.driver(
                 bolt_url,
-                auth=basic_auth(self.username, self.password))
+                auth=basic_auth(username, password))
             print("Connected to the database successfully")
 
         except ConnectionError as exception:
-            logging.error(f"Caught {exception}")
+            logging.error(f"Caught 1 {exception}")
+            self.environment.runner.quit()
         except BoltHandshakeError as exception:
-            logging.error(f"Caught {exception}")
-        except BaseException as exception:
-            logging.error(f"Caught {exception}")
+            logging.error(f"Caught 2 {exception}")
+            self.environment.runner.quit()
+        except ServiceUnavailable as exception:
+            logging.error(f"Caught 3 {exception}")
+            self.environment.runner.quit()
+
+    """Send query to neo4j"""
 
     @stopwatch
     def send(self, cypher_query, database):
-
-        # print(cypher_query, database)
         with self.driver.session(database=database) as session:
             results = session.read_transaction(
                 lambda tx: tx.run(cypher_query).data())
         return results
+
+    """Write query to neo4j"""
 
     @stopwatch
     def write(self, cypher_query, database, **kwargs):
@@ -73,14 +88,27 @@ class Neo4jClient:
                 results = session.write_transaction(
                     lambda tx: tx.run(cypher_query).data())
             return results
-        except ServiceUnavailable as exception:
-            logging.error(f"{cypher_query} raised an error with {exception}")
-        except CypherSyntaxError as exception:
-            logging.error(f"{cypher_query} raised an error with {exception}")
+
+        except ConstraintError as exception:
+            logging.error(f"{cypher_query} raised an exception with {exception}")
+            self.user.environment.runner.quit()
         except DatabaseError as exception:
-            logging.error(f"{cypher_query} raised an error with {exception}")
-        except BaseException as exception:
-            logging.error(f"{cypher_query} raised an error with {exception}")
+            logging.error(f"{cypher_query} raised an exception with {exception}")
+            self.user.environment.runner.quit()
+
+    """Disconnects from neo3j database"""
 
     def disconnect(self):
         self.driver.close()
+
+
+"""Abstract class for Neo4j"""
+
+
+class Neo4jUser(User):
+    abstract = True
+
+    def __init__(self, *args, **kwargs):
+        super(Neo4jUser, self).__init__(*args, **kwargs)
+        self.client = Neo4jClient(self.host)
+        self.client.environment = self.environment

@@ -1,17 +1,16 @@
-from locust import SequentialTaskSet, task, constant, User
+from locust import constant, SequentialTaskSet
 
-from neo4j_client import Neo4jClient
+from neo4j_client import *
 
 
-class Neo4jTest(SequentialTaskSet):
-
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.driver = ""
+class Neo4jTasks(SequentialTaskSet):
 
     def on_start(self):
-        self.driver = Neo4jClient("localhost:7687", "naveenkumar", "neo4j")
-        self.driver.connect()
+        try:
+            self.client.connect("naveenkumar", "neo4j")
+        except ConnectionError as exception:
+            logging.info(f"Caught {exception}")
+            self.user.environment.runner.quit()
 
     @task
     def send_query(self):
@@ -19,22 +18,24 @@ class Neo4jTest(SequentialTaskSet):
         MATCH (n:Actor) RETURN n LIMIT 25
         '''
         database = "neo4j"
-        res = self.driver.send(cypher_query, database)
-        print(res)
 
-    @task
-    def write_query(self):
-        cypher_query = '''
-        CREATE (u:User { name: "NaveenKumar", userId: "702" })
-        '''
-        database = "neo4j"
-        res = self.driver.write(cypher_query, database)
-        print(res)
+        res = self.client.send(cypher_query, database)
+        # print(res)
+
+    # @task
+    # def write_query(self):
+    #     cypher_query = '''
+    #     CREATE (u:User { name: "NaveenKumar", userId: "714" })
+    #     '''
+    #     database = "neo4j"
+    #     res = self.client.write(cypher_query, database)
+    #     print(res)
 
     def on_stop(self):
-        self.driver.disconnect()
+        self.client.disconnect()
 
 
-class Neo4jUser(User):
-    tasks = [Neo4jTest]
+class Neo4jCustom(Neo4jUser):
+    tasks = [Neo4jTasks]
+    host = "localhost:7687"
     wait_time = constant(1)
